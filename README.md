@@ -57,6 +57,153 @@ python cli.py bruteforce http://example.com/login username password admin passwo
 
 - Use responsibly and only on systems you have permission to test.
 - The brute force module requires knowledge of the login form field names and a success indicator string.
+"""
+Port Scanner Module
+Provides functionality to scan specified ports on a target host.
+"""
+
+import socket
+
+def scan_port(host: str, port: int, timeout: float = 1.0) -> bool:
+    """
+    Scan a single port on the target host.
+
+    Args:
+        host (str): The target hostname or IP address.
+        port (int): The port number to scan.
+        timeout (float): Timeout in seconds for the socket connection.
+
+    Returns:
+        bool: True if the port is open, False otherwise.
+    """
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.settimeout(timeout)
+            result = sock.connect_ex((host, port))
+            return result == 0
+    except Exception:
+        return False
+
+def scan_ports(host: str, ports: list[int], timeout: float = 1.0) -> dict[int, bool]:
+    """
+    Scan multiple ports on the target host.
+
+    Args:
+        host (str): The target hostname or IP address.
+        ports (list[int]): List of port numbers to scan.
+        timeout (float): Timeout in seconds for each socket connection.
+
+    Returns:
+        dict[int, bool]: Dictionary mapping port numbers to their open status.
+    """
+    results = {}
+    for port in ports:
+        results[port] = scan_port(host, port, timeout)
+    return results
+
+"""
+Brute Force Login Module
+Provides functionality to perform brute force login testing on HTTP login forms.
+"""
+
+import requests
+
+def brute_force_login(url: str, username_field: str, password_field: str, username: str, password_list: list[str], success_indicator: str, timeout: float = 5.0) -> str | None:
+    """
+    Attempt to brute force login on a HTTP login form.
+
+    Args:
+        url (str): The login form URL.
+        username_field (str): The form field name for the username.
+        password_field (str): The form field name for the password.
+        username (str): The username to test.
+        password_list (list[str]): List of passwords to try.
+        success_indicator (str): A string that indicates a successful login in the response.
+        timeout (float): Timeout in seconds for each HTTP request.
+
+    Returns:
+        str | None: The password that successfully logged in, or None if none succeeded.
+    """
+    session = requests.Session()
+    for password in password_list:
+        data = {
+            username_field: username,
+            password_field: password
+        }
+        try:
+            response = session.post(url, data=data, timeout=timeout)
+            if success_indicator in response.text:
+                return password
+        except requests.RequestException:
+            continue
+    return None
+"""
+CLI tool for the Penetration Testing Toolkit
+Allows users to run port scanning and brute force login testing from the command line.
+"""
+
+import argparse
+from pentest_toolkit import port_scanner, brute_force_login
+
+def run_port_scanner(args):
+    ports = []
+    for part in args.ports.split(','):
+        if '-' in part:
+            start, end = map(int, part.split('-'))
+            ports.extend(range(start, end + 1))
+        else:
+            ports.append(int(part))
+    results = port_scanner.scan_ports(args.host, ports, args.timeout)
+    for port, is_open in results.items():
+        status = "Open" if is_open else "Closed"
+        print(f"Port {port}: {status}")
+
+def run_brute_force(args):
+    with open(args.password_file, 'r') as f:
+        passwords = [line.strip() for line in f if line.strip()]
+    found_password = brute_force_login.brute_force_login(
+        args.url,
+        args.username_field,
+        args.password_field,
+        args.username,
+        passwords,
+        args.success_indicator,
+        args.timeout
+    )
+    if found_password:
+        print(f"Success! Password found: {found_password}")
+    else:
+        print("Password not found in the provided list.")
+
+def main():
+    parser = argparse.ArgumentParser(description="Penetration Testing Toolkit CLI")
+    subparsers = parser.add_subparsers(dest='command', required=True)
+
+    # Port scanner subcommand
+    parser_scan = subparsers.add_parser('portscan', help='Run port scanner')
+    parser_scan.add_argument('host', help='Target host to scan')
+    parser_scan.add_argument('ports', help='Comma-separated list of ports or port ranges (e.g. 22,80,1000-1010)')
+    parser_scan.add_argument('--timeout', type=float, default=1.0, help='Timeout for each port scan in seconds')
+
+    # Brute force login subcommand
+    parser_brute = subparsers.add_parser('bruteforce', help='Run brute force login tester')
+    parser_brute.add_argument('url', help='Login form URL')
+    parser_brute.add_argument('username_field', help='Form field name for username')
+    parser_brute.add_argument('password_field', help='Form field name for password')
+    parser_brute.add_argument('username', help='Username to test')
+    parser_brute.add_argument('password_file', help='File containing list of passwords to try')
+    parser_brute.add_argument('success_indicator', help='String indicating successful login in response')
+    parser_brute.add_argument('--timeout', type=float, default=5.0, help='Timeout for each HTTP request in seconds')
+
+    args = parser.parse_args()
+
+    if args.command == 'portscan':
+        run_port_scanner(args)
+    elif args.command == 'bruteforce':
+        run_brute_force(args)
+
+if __name__ == '__main__':
+    main()
 
 
 import unittest
